@@ -2,6 +2,14 @@ import os, argparse, inflect, xml.etree.ElementTree as etree
 
 engine = inflect.engine()
 
+parser = argparse.ArgumentParser(description='Generate all the files')
+parser.add_argument('schema', type=str, help='Input file')
+parser.add_argument('-n', '--namespace', type=str, help='Class namespace')
+parser.add_argument('-o', '--output', type=str, help='Output path')
+args = parser.parse_args()
+
+namespace = args.namespace if args.namespace else ''
+
 PRIMARY_KEY_LABEL = 'primary'
 XML_NAMESPACE = '{http://www.w3.org/2001/XMLSchema-instance}'
 
@@ -9,7 +17,7 @@ MODEL_SNIPPET =  os.path.join('snippets', 'Model.php')
 RESOURCE_MODEL_SNIPPET = os.path.join('snippets', 'ResourceModel.php')
 COLLECTION_SNIPPET = os.path.join('snippets', 'Collection.php')
 
-OUTPUT_DIR = os.path.relpath('output')
+OUTPUT_DIR = os.path.relpath(args.output) if args.output else os.path.relpath('output')
 MODEL_DIR = os.path.join(OUTPUT_DIR, 'Models')
 RESOURCE_MODEL_DIR = os.path.join(MODEL_DIR, 'ResourceModel')
 
@@ -24,11 +32,8 @@ def fill_snippet(input_path, output_path, parse_line_function):
                 fileout.write(parse_line_function(line))
 
 def generate_class(input_path, output_path, **kwargs):
-    for directory in os.path.split(output_path)[:-1]:
-        if not os.path.exists(directory):
-            os.mkdir()
-
     fill_snippet(input_path, output_path, lambda line: mass_replace(line, **kwargs))
+    print('File {} created'.format(output_path))
 
 def snake_to_pascal(snake_str):
     words = map(lambda word: word.capitalize(), snake_str.split('_'))
@@ -36,11 +41,6 @@ def snake_to_pascal(snake_str):
 
 for directory in [OUTPUT_DIR, MODEL_DIR, RESOURCE_MODEL_DIR]:
     if not os.path.exists(directory): os.mkdir(directory)
-
-parser = argparse.ArgumentParser(description='Generate all the files')
-parser.add_argument('schema', type=str, help='Input file')
-
-args = parser.parse_args()
 
 tree = etree.parse(args.schema)
 root = tree.getroot()
@@ -54,7 +54,7 @@ for table in root.findall('table'):
             primary_key = constraint.find('column').get('name')
 
     model_class = engine.singular_noun(snake_to_pascal(table_name))
-    # TODO: add option for class shortening (namespaces)
+    if model_class != namespace: model_class = model_class.replace(namespace, '')
 
     generate_class(RESOURCE_MODEL_SNIPPET, os.path.join(RESOURCE_MODEL_DIR, model_class + '.php'), 
         model = model_class, table = table_name, primary_key = primary_key)
