@@ -22,4 +22,6 @@ class [model] extends AbstractModel
     {
         $this->_init([resource_model]Resource::class);
     }
+
+    [getset]
 }
