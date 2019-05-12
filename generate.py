@@ -1,6 +1,14 @@
-import os, argparse, inflect, xml.etree.ElementTree as etree
+import os, argparse
+from xml.etree import ElementTree
+from jinja2 import Environment, PackageLoader
+from textformat import snake_to_pascal, snake_to_camel, singular, translate_sql_type
 
-engine = inflect.engine()
+env = Environment(loader=PackageLoader('generate', 'templates'))
+
+MODEL_TEMPLATE = env.get_template('Model.php')
+RESOURCEMODEL_TEMPLATE = env.get_template('ResourceModel.php')
+COLLECTION_TEMPLATE = env.get_template('Collection.php')
+DATA_INTERFACE_TEMPLATE = env.get_template('DataInterface.php')
 
 parser = argparse.ArgumentParser(description='Generate all the files')
 parser.add_argument('schema', type=str, help='Input file')
@@ -13,56 +21,53 @@ namespace = args.namespace if args.namespace else ''
 PRIMARY_KEY_LABEL = 'primary'
 XML_NAMESPACE = '{http://www.w3.org/2001/XMLSchema-instance}'
 
-MODEL_SNIPPET =  os.path.join('snippets', 'Model.php')
-RESOURCE_MODEL_SNIPPET = os.path.join('snippets', 'ResourceModel.php')
-COLLECTION_SNIPPET = os.path.join('snippets', 'Collection.php')
-
 OUTPUT_DIR = os.path.relpath(args.output) if args.output else os.path.relpath('output')
+API_DIR = os.path.join(OUTPUT_DIR, 'Api')
+API_DATA_DIR = os.path.join(API_DIR, 'Data')
 MODEL_DIR = os.path.join(OUTPUT_DIR, 'Models')
 RESOURCE_MODEL_DIR = os.path.join(MODEL_DIR, 'ResourceModel')
 
-def mass_replace(string, **kwargs):
-    for key, value in kwargs.items(): string = string.replace('[{}]'.format(key), value)
-    return string
+def generate_file(path, template, **kwargs):
+    with open(path, 'w+') as fileout:
+        fileout.write(template.render(*kwargs))
 
-def fill_snippet(input_path, output_path, parse_line_function):
-    with open(input_path) as filein:
-        with open(output_path, 'w+') as fileout:
-            for line in filein:
-                fileout.write(parse_line_function(line))
-
-def generate_class(input_path, output_path, **kwargs):
-    fill_snippet(input_path, output_path, lambda line: mass_replace(line, **kwargs))
-    print('File {} created'.format(output_path))
-
-def snake_to_pascal(snake_str):
-    words = map(lambda word: word.capitalize(), snake_str.split('_'))
-    return ''.join(words)
-
-for directory in [OUTPUT_DIR, MODEL_DIR, RESOURCE_MODEL_DIR]:
+for directory in [OUTPUT_DIR, API_DIR, API_DATA_DIR, MODEL_DIR, RESOURCE_MODEL_DIR]:
     if not os.path.exists(directory): os.mkdir(directory)
 
-tree = etree.parse(args.schema)
+tree = ElementTree.parse(args.schema)
 root = tree.getroot()
 
 for table in root.findall('table'):
     table_name = table.get('name')
+    columns = []
     primary_key = ''
     
     for constraint in table.findall('constraint'):
         if constraint.get(XML_NAMESPACE + 'type') == PRIMARY_KEY_LABEL:
             primary_key = constraint.find('column').get('name')
 
-    model_class = engine.singular_noun(snake_to_pascal(table_name))
-    if model_class != namespace: model_class = model_class.replace(namespace, '')
+    for column in table.findall('column'):
+        columns.append({
+            'name': column.get('name'), 
+            'type': translate_sql_type(column.get(XML_NAMESPACE + 'type')),
+            'pascal': snake_to_pascal(column.get('name')),
+            'camel': snake_to_camel(column.get('name'))
+        })
 
-    generate_class(RESOURCE_MODEL_SNIPPET, os.path.join(RESOURCE_MODEL_DIR, model_class + '.php'), 
-        model = model_class, table = table_name, primary_key = primary_key)
-    generate_class(MODEL_SNIPPET, os.path.join(MODEL_DIR, model_class + '.php'), 
-        model = model_class, resource_model = model_class)
+    model_class = singular(snake_to_pascal(table_name))
+    if model_class != namespace: model_class = model_class.replace(namespace, '')
     
-    collection_directory = os.path.join(RESOURCE_MODEL_DIR, model_class)
-    if not os.path.exists(collection_directory):
-        os.mkdir(collection_directory)
-    generate_class(COLLECTION_SNIPPET, os.path.join(RESOURCE_MODEL_DIR, model_class, 'Collection.php'), 
-        model = model_class, resource_model = model_class, primary_key = primary_key)
+    generate_file(os.path.join(RESOURCE_MODEL_DIR, model_class + '.php'), RESOURCEMODEL_TEMPLATE,
+        model=model_class, table=table_name, primary_key=primary_key)
+    
+    generate_file(os.path.join(MODEL_DIR, model_class + '.php'), MODEL_TEMPLATE,
+        model=model_class, resource_model=model_class, columns=columns)
+
+    if not os.path.exists(os.path.join(RESOURCE_MODEL_DIR, model_class)): 
+        os.mkdir(os.path.join(RESOURCE_MODEL_DIR, model_class))
+    
+    generate_file(os.path.join(RESOURCE_MODEL_DIR, model_class, 'Collection.php'), COLLECTION_TEMPLATE,
+        model=model_class, resource_model=model_class, primary_key=primary_key)
+
+    generate_file(os.path.join(API_DATA_DIR, model_class + 'Interface.php'), DATA_INTERFACE_TEMPLATE,
+        model=model_class, columns=columns)
