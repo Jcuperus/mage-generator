@@ -1,0 +1,1 @@
+const [column_key] = '[column_value]';
