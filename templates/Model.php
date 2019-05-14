@@ -24,7 +24,6 @@ class {{ model }} extends AbstractModel {% if columns %}implements {{ model }}In
         $this->_init({{ resource_model }}Resource::class);
     }
 {% for column in columns %}
-
     /**
      * {@inheritDoc}
      */

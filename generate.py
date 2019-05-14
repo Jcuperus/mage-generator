@@ -24,12 +24,12 @@ XML_NAMESPACE = '{http://www.w3.org/2001/XMLSchema-instance}'
 OUTPUT_DIR = os.path.relpath(args.output) if args.output else os.path.relpath('output')
 API_DIR = os.path.join(OUTPUT_DIR, 'Api')
 API_DATA_DIR = os.path.join(API_DIR, 'Data')
-MODEL_DIR = os.path.join(OUTPUT_DIR, 'Models')
+MODEL_DIR = os.path.join(OUTPUT_DIR, 'Model')
 RESOURCE_MODEL_DIR = os.path.join(MODEL_DIR, 'ResourceModel')
 
 def generate_file(path, template, **kwargs):
     with open(path, 'w+') as fileout:
-        fileout.write(template.render(*kwargs))
+        fileout.write(template.render(**kwargs))
 
 for directory in [OUTPUT_DIR, API_DIR, API_DATA_DIR, MODEL_DIR, RESOURCE_MODEL_DIR]:
     if not os.path.exists(directory): os.mkdir(directory)
